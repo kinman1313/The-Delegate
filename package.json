@@ -1,0 +1,23 @@
+{
+  "name": "the-delegate",
+  "version": "1.0.0",
+  "description": "Multi-Modal Delegate You",
+  "keywords": [
+    "LLM"
+  ],
+  "homepage": "https://github.com/kinman1313/The-Delegate#readme",
+  "bugs": {
+    "url": "https://github.com/kinman1313/The-Delegate/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kinman1313/The-Delegate.git"
+  },
+  "license": "ISC",
+  "author": "Kevin Inman",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
