@@ -1,6 +1,7 @@
-﻿// FileUpload.tsx
-import React, { useState, ChangeEvent, FormEvent } from 'react';
+﻿
+import React, { useState, useRef, ChangeEvent, FormEvent } from 'react';
 import { uploadFile } from '../services/apiService';
+import '../styles/FileUpload.css';
 
 interface FileUploadProps {
     conversationId: string | null;
@@ -9,17 +10,16 @@ interface FileUploadProps {
     onCancel: () => void;
 }
 
-interface FileUploadResult {
+export interface FileUploadResult {
     fileId: string;
     filename: string;
     reference: string;
     type: string;
-}
-
-interface ProgressEvent {
-    lengthComputable: boolean;
-    loaded: number;
-    total: number;
+    summary?: string;
+    _id?: string;
+    originalName?: string;
+    mimetype?: string;
+    uploadedAt?: string;
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({ conversationId, token, onFileUploaded, onCancel }) => {
@@ -27,6 +27,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ conversationId, token, onFileUp
     const [isUploading, setIsUploading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [uploadProgress, setUploadProgress] = useState<number>(0);
+    
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
@@ -55,11 +57,12 @@ const FileUpload: React.FC<FileUploadProps> = ({ conversationId, token, onFileUp
             'application/pdf', 'application/msword',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'image/jpeg', 'image/png', 'image/gif'
         ];
 
         if (!allowedTypes.includes(file.type)) {
-            setError('Invalid file type. Only text, documents, and spreadsheets are allowed.');
+            setError('Invalid file type. Only text, documents, spreadsheets, and images are allowed.');
             return;
         }
 
@@ -75,27 +78,72 @@ const FileUpload: React.FC<FileUploadProps> = ({ conversationId, token, onFileUp
                 formData.append('conversationId', conversationId);
             }
 
-            // Monitor upload progress
-            const progressCallback = (event: ProgressEvent) => {
-                if (event.lengthComputable) {
-                    const percentComplete = Math.round((event.loaded / event.total) * 100);
-                    setUploadProgress(percentComplete);
-                }
-            };
-
             if (!token) {
                 throw new Error('Authentication token is missing');
             }
 
-            const result = await uploadFile(token, formData, progressCallback);
-
-            // Call the parent component's callback with file info
-            onFileUploaded(result);
+            // Create an XMLHttpRequest for progress monitoring
+            const xhr = new XMLHttpRequest();
+            
+            xhr.open('POST', '/api/files/upload');
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            
+            // Set up progress monitoring
+            xhr.upload.addEventListener('progress', (event) => {
+                if (event.lengthComputable) {
+                    const progress = Math.round((event.loaded / event.total) * 100);
+                    setUploadProgress(progress);
+                }
+            });
+            
+            // Set up completion and error handlers
+            xhr.onload = function() {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        const result = JSON.parse(xhr.responseText);
+                        onFileUploaded(result);
+                        setIsUploading(false);
+                    } catch (parseError) {
+                        setError('Error parsing server response');
+                        setIsUploading(false);
+                    }
+                } else {
+                    try {
+                        const errorResponse = JSON.parse(xhr.responseText);
+                        setError(errorResponse.error || 'Upload failed');
+                    } catch (parseError) {
+                        setError(`Upload failed with status ${xhr.status}`);
+                    }
+                    setIsUploading(false);
+                }
+            };
+            
+            xhr.onerror = function() {
+                setError('Network error during file upload');
+                setIsUploading(false);
+            };
+            
+            // Send the form data
+            xhr.send(formData);
         } catch (err: any) {
             console.error('File upload failed:', err);
             setError(err.message || 'File upload failed. Please try again.');
-        } finally {
             setIsUploading(false);
+        }
+    };
+
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            setFile(e.dataTransfer.files[0]);
+            setError(null);
         }
     };
 
@@ -107,35 +155,51 @@ const FileUpload: React.FC<FileUploadProps> = ({ conversationId, token, onFileUp
             </div>
 
             <form onSubmit={handleSubmit} className="file-upload-form">
-                <div className="file-input-group">
-                    <label htmlFor="file-upload" className="file-input-label">
-                        {file ? file.name : 'Choose a file'}
-                    </label>
+                <div 
+                    className="file-drop-area"
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                >
                     <input
                         type="file"
-                        id="file-upload"
+                        ref={fileInputRef}
                         onChange={handleFileChange}
                         className="file-input"
+                        style={{ display: 'none' }}
                         disabled={isUploading}
                     />
-                </div>
-
-                {file && (
-                    <div className="file-details">
-                        <p className="file-name">{file.name}</p>
-                        <p className="file-size">{(file.size / 1024).toFixed(2)} KB</p>
-                        <p className="file-type">{file.type}</p>
+                    
+                    <div className="file-drop-content">
+                        {file ? (
+                            <div className="selected-file">
+                                <div className="file-icon">{getFileIcon(file.type)}</div>
+                                <div className="file-details">
+                                    <p className="file-name">{file.name}</p>
+                                    <p className="file-size">{formatFileSize(file.size)}</p>
+                                    <p className="file-type">{file.type}</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="upload-icon">📁</div>
+                                <p>Drag & drop a file here or click to select</p>
+                                <p className="upload-note">Maximum file size: 10MB</p>
+                            </>
+                        )}
                     </div>
-                )}
+                </div>
 
                 {error && <div className="upload-error">{error}</div>}
 
                 {isUploading && (
                     <div className="upload-progress-container">
-                        <div
-                            className="upload-progress-bar"
-                            style={{ width: `${uploadProgress}%` }}
-                        ></div>
+                        <div className="upload-progress-bar">
+                            <div 
+                                className="upload-progress-fill" 
+                                style={{ width: `${uploadProgress}%` }}
+                            ></div>
+                        </div>
                         <span className="upload-progress-text">{uploadProgress}%</span>
                     </div>
                 )}
@@ -165,11 +229,31 @@ const FileUpload: React.FC<FileUploadProps> = ({ conversationId, token, onFileUp
                     <li>Text files (.txt, .csv, .json)</li>
                     <li>Documents (.pdf, .doc, .docx)</li>
                     <li>Spreadsheets (.xls, .xlsx)</li>
+                    <li>Images (.jpg, .png, .gif)</li>
                 </ul>
-                <p className="upload-note">Maximum file size: 10MB</p>
             </div>
         </div>
     );
 };
+
+// Helper functions
+function getFileIcon(mimeType: string): string {
+    if (mimeType.startsWith('image/')) return '🖼️';
+    if (mimeType.includes('pdf')) return '📄';
+    if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('csv')) return '📊';
+    if (mimeType.includes('word')) return '📝';
+    if (mimeType.includes('text')) return '📃';
+    return '📁';
+}
+
+function formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
 
 export default FileUpload;
