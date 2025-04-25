@@ -25,7 +25,7 @@
     "react-hook-form": "^7.55.0",
     "react-markdown": "^10.1.0",
     "react-pdf": "^9.2.1",
-    "react-router-dom": "^7.5.0",
+    "react-router-dom": "^7.5.2",
     "recharts": "^2.15.2",
     "sharp": "^0.34.1",
     "tabula-js": "^1.0.1"
